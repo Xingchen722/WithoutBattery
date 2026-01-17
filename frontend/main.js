@@ -418,15 +418,40 @@ function playAnnoyingSound() {
 }
 function stopAnnoyingSound() { if (currentOsc) { currentOsc.stop(); currentOsc = null; } }
 
-// 聊天逻辑
+// --- 聊天逻辑 ---
 sendBtn.addEventListener("click", sendMessage);
 userInput.addEventListener("keypress", (e) => { if (e.key === "Enter") sendMessage(); });
-function sendMessage() {
+
+async function sendMessage() {
     const msg = userInput.value.trim();
     if (!msg) return;
+
     addMessage(msg, "user-msg");
     userInput.value = "";
-    setTimeout(() => { addMessage(getAIResponse(msg), "ai-msg"); }, 500);
+
+    addMessage("🤖 AI is thinking...", "ai-msg");
+    try {
+        const res = await fetch("http://localhost:5000/ask", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ question: msg })
+        });
+
+        const data = await res.json();
+
+        const lastAI = messagesContainer.querySelector(".ai-msg:last-child");
+        if (lastAI && lastAI.innerText === "🤖 AI is thinking...") lastAI.remove();
+
+        addMessage(data.answer, "ai-msg");
+    } catch (err) {
+        const lastAI = messagesContainer.querySelector(".ai-msg:last-child");
+        if (lastAI && lastAI.innerText === "🤖 AI is thinking...") lastAI.remove();
+
+        // Fallback to local response if backend is unavailable.
+        addMessage(getAIResponse(msg), "ai-msg");
+    }
 }
 function addMessage(text, className) {
     const msgDiv = document.createElement("div");

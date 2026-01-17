@@ -13,20 +13,48 @@
             <p>Get moving right now!</p>
         </div>
     </div>
-    <div id="app">
-        <header>
-            <h1>AI Chat</h1>
-            <button id="theme-toggle" aria-label="Toggle theme">LIGHT</button>
-        </header>
+    <header class="site-header">
+        <div class="brand">WithoutBattery</div>
+        <nav class="top-nav">
+            <a class="nav-link" href="#home">Home</a>
+            <a class="nav-link" href="#leaderboard-section">Leaderboard</a>
+        </nav>
+        <button id="theme-toggle" aria-label="Toggle theme">LIGHT</button>
+    </header>
 
-        <div id="chat-container">
-            <div id="messages"></div>
-            <div id="input-container">
-                <input type="text" id="user-input" placeholder="Type your question...">
-                <button id="send-btn">Send</button>
-            </div>
-        </div>
+    <div class="ghost-backdrop" aria-hidden="true">
+        <div class="ghost-giant">👻</div>
+        <div class="ghost-giant ghost-2">👻</div>
+        <div class="ghost-giant ghost-3">👻</div>
+        <div class="wave wave-1"></div>
+        <div class="wave wave-2"></div>
+        <div class="wave wave-3"></div>
     </div>
+
+    <main class="page">
+        <section id="home" class="section">
+            <div id="app">
+                <header class="chat-header">
+                    <h1>AI Chat</h1>
+                </header>
+                <div id="chat-container">
+                    <div id="messages"></div>
+                    <div id="input-container">
+                        <input type="text" id="user-input" placeholder="Type your question...">
+                        <button id="send-btn">Send</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="leaderboard-section" class="section">
+            <div id="leaderboard" class="leaderboard-card">
+                <h2>ranking list</h2>
+                <ul id="leaderboard-list"></ul>
+                <div class="leaderboard-note">Data is only saved in the local browser</div>
+            </div>
+        </section>
+    </main>
 
     <div id="floating-timer" aria-label="Floating timer">
         <div id="status-bar">
