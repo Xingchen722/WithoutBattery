@@ -11,6 +11,8 @@ const appContainer = document.getElementById("app");
 const cameraToggleBtn = document.getElementById("camera-toggle");
 const cameraStatus = document.getElementById("camera-status");
 const cameraFeed = document.getElementById("camera-feed");
+const expandBtn = document.querySelector(".expand-btn");
+const crazyBtn = document.getElementById("crazy-btn");
 
 // --- 状态变量 ---
 const INACTIVITY_LIMIT = 100; 
@@ -23,6 +25,13 @@ let audioContext = null;
 let currentOsc = null;
 const punishmentReasons = new Set();
 
+// --- Crazy模式状态变量 ---
+let isCrazyMode = false;
+let crazyMouseInterval = null;
+let crazyEscCount = 0;
+let sendBtnOriginalPosition = null;
+let nomNomAudio = null;
+
 // --- 核心计时循环 (每秒执行) ---
 setInterval(() => {
     const now = Date.now();
@@ -34,13 +43,15 @@ setInterval(() => {
     }
 
     const idleMs = now - lastActivityAt;
+    const inCooldown = now < mouthOpenCooldownUntil;
 
     if (!isPunishing) {
         statusLabel.innerText = "🔥 WORKING";
         totalWorkSeconds++; // 仅在工作且未受罚时累加
         timerDisplay.innerText = formatTime(totalWorkSeconds);
 
-        if (idleMs >= INACTIVITY_LIMIT * 1000) {
+        // 冷却期内不触发空闲惩罚
+        if (idleMs >= INACTIVITY_LIMIT * 1000 && !inCooldown) {
             triggerPunishment("idle");
         }
     } else {
@@ -128,8 +139,11 @@ function updateLeaderboard() {
 
 // --- 按钮逻辑 ---
 let isDraggingTimer = false;
+let isDraggingCamera = false;
 let dragOffsetX = 0;
 let dragOffsetY = 0;
+let cameraDragOffsetX = 0;
+let cameraDragOffsetY = 0;
 
 function clamp(value, min, max) {
     return Math.min(Math.max(value, min), max);
@@ -170,20 +184,26 @@ function onDragStart(e) {
 }
 
 function onDragMove(e) {
-    if (!isDraggingTimer) return;
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    const nextLeft = clientX - dragOffsetX;
-    const nextTop = clientY - dragOffsetY;
-    setTimerPosition(nextLeft, nextTop);
+    if (isDraggingTimer) {
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        const nextLeft = clientX - dragOffsetX;
+        const nextTop = clientY - dragOffsetY;
+        setTimerPosition(nextLeft, nextTop);
+    } else if (isDraggingCamera) {
+        onCameraDragMove(e);
+    }
 }
 
 function onDragEnd() {
-    if (!isDraggingTimer) return;
-    isDraggingTimer = false;
-    floatingTimer.classList.remove("dragging");
-    const rect = floatingTimer.getBoundingClientRect();
-    localStorage.setItem("timer-pos", JSON.stringify({ left: rect.left, top: rect.top }));
+    if (isDraggingTimer) {
+        isDraggingTimer = false;
+        floatingTimer.classList.remove("dragging");
+        const rect = floatingTimer.getBoundingClientRect();
+        localStorage.setItem("timer-pos", JSON.stringify({ left: rect.left, top: rect.top }));
+    } else if (isDraggingCamera) {
+        onCameraDragEnd();
+    }
 }
 
 floatingTimer.addEventListener("mousedown", onDragStart);
@@ -193,11 +213,76 @@ document.addEventListener("touchmove", onDragMove, { passive: true });
 document.addEventListener("mouseup", onDragEnd);
 document.addEventListener("touchend", onDragEnd);
 window.addEventListener("resize", () => {
-    const rect = floatingTimer.getBoundingClientRect();
-    setTimerPosition(rect.left, rect.top);
+    if (!appContainer.classList.contains("expanded")) {
+        const rect = floatingTimer.getBoundingClientRect();
+        setTimerPosition(rect.left, rect.top);
+        if (isCameraOn && cameraFeed.style.display !== "none") {
+            const cameraRect = cameraFeed.getBoundingClientRect();
+            setCameraPosition(cameraRect.left, cameraRect.top);
+        }
+    }
 });
 
 initTimerPosition();
+
+// --- 摄像头拖拽功能 ---
+function setCameraPosition(left, top) {
+    const maxLeft = window.innerWidth - cameraFeed.offsetWidth;
+    const maxTop = window.innerHeight - cameraFeed.offsetHeight;
+    cameraFeed.style.left = `${clamp(left, 0, maxLeft)}px`;
+    cameraFeed.style.top = `${clamp(top, 0, maxTop)}px`;
+    cameraFeed.style.right = "auto";
+}
+
+function initCameraPosition() {
+    const saved = localStorage.getItem("camera-pos");
+    if (saved) {
+        try {
+            const { left, top } = JSON.parse(saved);
+            if (typeof left === "number" && typeof top === "number") {
+                setCameraPosition(left, top);
+                return;
+            }
+        } catch (_) {}
+    }
+    // 默认位置
+    setCameraPosition(window.innerWidth - 234, 84);
+}
+
+function onCameraDragStart(e) {
+    if (e.target.closest("button") || e.target.closest("input")) return;
+    if (!isCameraOn || cameraFeed.style.display === "none") return;
+    isDraggingCamera = true;
+    cameraFeed.classList.add("dragging");
+    const rect = cameraFeed.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    cameraDragOffsetX = clientX - rect.left;
+    cameraDragOffsetY = clientY - rect.top;
+}
+
+function onCameraDragMove(e) {
+    if (!isDraggingCamera) return;
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    const nextLeft = clientX - cameraDragOffsetX;
+    const nextTop = clientY - cameraDragOffsetY;
+    setCameraPosition(nextLeft, nextTop);
+}
+
+function onCameraDragEnd() {
+    if (!isDraggingCamera) return;
+    isDraggingCamera = false;
+    cameraFeed.classList.remove("dragging");
+    const rect = cameraFeed.getBoundingClientRect();
+    localStorage.setItem("camera-pos", JSON.stringify({ left: rect.left, top: rect.top }));
+}
+
+cameraFeed.addEventListener("mousedown", onCameraDragStart);
+cameraFeed.addEventListener("touchstart", onCameraDragStart, { passive: true });
+// 使用全局事件监听器（已在timer部分添加）
+
+initCameraPosition();
 
 // --- 摄像头闭眼检测 ---
 let isCameraOn = false;
@@ -212,8 +297,16 @@ const HAND_DETECT_INTERVAL_MS = 180; // ~5 FPS
 let waveSamples = [];
 let waveCooldownUntil = 0;
 let eyeClosedFrames = 0;
-const EYE_CLOSED_FRAMES = 12;
+const EYE_CLOSED_FRAMES = 12; // 约3秒（12帧 * 30fps ≈ 0.4秒，实际约3秒）
 const EAR_THRESHOLD = 0.21;
+let hasTakenShamePhoto = false; // 标记是否已经拍过照（避免重复拍照）
+
+// 嘴巴检测相关变量
+let mouthOpenFrames = 0;
+const MOUTH_OPEN_FRAMES = 5; // 连续5帧检测到嘴巴张开才触发
+const MAR_THRESHOLD = 0.5; // 嘴巴纵横比阈值，大于此值表示嘴巴张开
+let mouthOpenCooldownUntil = 0; // 嘴巴张开取消警告后的冷却期结束时间
+const MOUTH_OPEN_COOLDOWN = 3000; // 冷却期3秒，期间不会重新触发警告
 
 function setCameraStatus(text, active = false) {
     cameraStatus.innerText = text;
@@ -236,11 +329,36 @@ function computeEAR(landmarks, eye) {
     return (distance(p2, p6) + distance(p3, p5)) / (2 * distance(p1, p4));
 }
 
+// 计算嘴巴纵横比 (Mouth Aspect Ratio)
+// 使用嘴巴的关键点：上唇中心(13), 下唇中心(14), 左嘴角(61), 右嘴角(291)
+function computeMAR(landmarks) {
+    // 上唇中心点
+    const topLip = landmarks[13];
+    // 下唇中心点
+    const bottomLip = landmarks[14];
+    // 左嘴角
+    const leftCorner = landmarks[61];
+    // 右嘴角
+    const rightCorner = landmarks[291];
+
+    // 计算嘴巴高度（上下唇距离）
+    const mouthHeight = distance(topLip, bottomLip);
+    // 计算嘴巴宽度（左右嘴角距离）
+    const mouthWidth = distance(leftCorner, rightCorner);
+
+    // 避免除零
+    if (mouthWidth === 0) return 0;
+
+    // 返回嘴巴纵横比（高度/宽度）
+    return mouthHeight / mouthWidth;
+}
+
 function onFaceResults(results) {
     if (!isCameraOn) return;
     const faces = results.multiFaceLandmarks || [];
     if (faces.length === 0) {
         eyeClosedFrames = 0;
+        mouthOpenFrames = 0;
         setCameraStatus("No face", true);
         stopPunishment("eyes");
         return;
@@ -252,16 +370,48 @@ function onFaceResults(results) {
     const rightEAR = computeEAR(landmarks, rightEye);
     const ear = (leftEAR + rightEAR) / 2;
 
+    // 检查是否在冷却期内（嘴巴张开取消警告后的冷却期）
+    const now = Date.now();
+    const inCooldown = now < mouthOpenCooldownUntil;
+
+    // 眼睛检测（冷却期内不触发新的惩罚）
     if (ear < EAR_THRESHOLD) {
         eyeClosedFrames += 1;
         setCameraStatus("Eyes closed", true);
-        if (eyeClosedFrames >= EYE_CLOSED_FRAMES) {
+        if (eyeClosedFrames >= EYE_CLOSED_FRAMES && !inCooldown) {
             triggerPunishment("eyes");
+            // 触发羞耻快照（只在第一次触发时拍照，且摄像头已开启）
+            if (!hasTakenShamePhoto && isCameraOn && cameraFeed && cameraFeed.readyState === 4) {
+                takeShamePhoto();
+                hasTakenShamePhoto = true;
+            }
         }
     } else {
         eyeClosedFrames = 0;
+        hasTakenShamePhoto = false; // 眼睛睁开后重置标记，允许下次再拍
         setCameraStatus("Eyes open", true);
         stopPunishment("eyes");
+    }
+
+    // 嘴巴检测 - 检测嘴巴是否张开
+    const mar = computeMAR(landmarks);
+    if (mar > MAR_THRESHOLD) {
+        mouthOpenFrames += 1;
+        if (mouthOpenFrames >= MOUTH_OPEN_FRAMES) {
+            // 检测到嘴巴张开，取消所有警告并设置冷却期
+            if (isPunishing) {
+                stopPunishment(); // 不传参数，清除所有惩罚
+                mouthOpenCooldownUntil = now + MOUTH_OPEN_COOLDOWN; // 设置3秒冷却期
+                setCameraStatus("Mouth open - Warning cleared", false);
+            }
+        }
+    } else {
+        mouthOpenFrames = 0;
+        // 如果还在冷却期内，显示冷却状态
+        if (inCooldown) {
+            const remainingTime = Math.ceil((mouthOpenCooldownUntil - now) / 1000);
+            setCameraStatus(`Cooldown: ${remainingTime}s`, false);
+        }
     }
 }
 
@@ -366,6 +516,7 @@ function stopCamera() {
     if (!isCameraOn) return;
     isCameraOn = false;
     eyeClosedFrames = 0;
+    mouthOpenFrames = 0;
     waveSamples = [];
     stopPunishment("eyes");
     if (camera) camera.stop();
@@ -406,6 +557,32 @@ const savedTheme = localStorage.getItem("theme");
 const prefersLight = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
 applyTheme(savedTheme ? savedTheme === "light" : prefersLight);
 
+// --- 全屏切换功能 ---
+expandBtn.addEventListener("click", () => {
+    const isExpanding = !appContainer.classList.contains("expanded");
+    appContainer.classList.toggle("expanded");
+    expandBtn.classList.toggle("expanded");
+
+    // 切换图标：⛶ (全屏) 和 ✕ (退出全屏)
+    if (appContainer.classList.contains("expanded")) {
+        expandBtn.innerHTML = "✕"; // 退出全屏图标
+        expandBtn.setAttribute("aria-label", "Exit fullscreen");
+        // 全屏时隐藏摄像头和timer
+        floatingTimer.style.display = "none";
+        if (cameraFeed) {
+            cameraFeed.style.display = "none";
+        }
+    } else {
+        expandBtn.innerHTML = "⛶"; // 全屏图标
+        expandBtn.setAttribute("aria-label", "Expand chat");
+        // 退出全屏时恢复显示
+        floatingTimer.style.display = "";
+        if (cameraFeed && isCameraOn) {
+            cameraFeed.style.display = "block";
+        }
+    }
+});
+
 themeToggleBtn.addEventListener("click", () => {
     applyTheme(!document.body.classList.contains("light-theme"));
 });
@@ -441,6 +618,27 @@ function resetTimer() {
     if (isPaused) return;
     if (isPunishing) stopPunishment("idle");
     lastActivityAt = Date.now();
+
+    // 处理羞耻照片：只保留第一张并放大
+    const allPhotos = document.querySelectorAll('.shame-photo');
+    if (allPhotos.length > 0) {
+        // 保留第一张照片
+        const firstPhoto = allPhotos[0];
+
+        // 移除其他所有照片
+        for (let i = 1; i < allPhotos.length; i++) {
+            allPhotos[i].remove();
+            shamePhotoCount--;
+        }
+
+        // 将第一张照片放大并居中（如果还没有被放大）
+        if (!firstPhoto.classList.contains('shame-photo-enlarged')) {
+            firstPhoto.classList.add('shame-photo-enlarged');
+            firstPhoto.style.left = '50%';
+            firstPhoto.style.top = '50%';
+            firstPhoto.style.zIndex = '10003';
+        }
+    }
 }
 
 document.onmousemove = resetTimer;
@@ -471,6 +669,133 @@ function stopPunishment(reason) {
     document.querySelectorAll(".mini-warning").forEach(el => el.remove());
     document.documentElement.classList.remove("punished-active");
     stopAnnoyingSound();
+    // 重置羞耻快照标记（当所有惩罚都停止时）
+    if (punishmentReasons.size === 0) {
+        hasTakenShamePhoto = false;
+    }
+}
+
+// --- 羞耻快照功能 ---
+let shamePhotoCount = 0; // 当前显示的照片数量
+const MAX_SHAME_PHOTOS = 5; // 最多同时显示5张照片，避免内存占用过多
+
+function takeShamePhoto() {
+    if (!cameraFeed || cameraFeed.readyState !== 4) return;
+
+    // 限制同时显示的照片数量
+    const existingPhotos = document.querySelectorAll('.shame-photo');
+    if (existingPhotos.length >= MAX_SHAME_PHOTOS) {
+        // 移除最旧的照片
+        existingPhotos[0].remove();
+    }
+
+    try {
+        // 创建canvas元素
+        const canvas = document.createElement('canvas');
+        canvas.width = cameraFeed.videoWidth || 640;
+        canvas.height = cameraFeed.videoHeight || 480;
+        const ctx = canvas.getContext('2d');
+
+        // 绘制视频帧到canvas
+        ctx.drawImage(cameraFeed, 0, 0, canvas.width, canvas.height);
+
+        // 添加水印文字
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+        const dateStr = now.toLocaleDateString('zh-CN');
+
+        // 计算文字大小（响应式）
+        const fontSize1 = Math.max(32, canvas.width / 15);
+        const fontSize2 = Math.max(24, canvas.width / 20);
+        const fontSize3 = Math.max(28, canvas.width / 18);
+
+        // 添加主要水印文字
+        const mainText = '😴 I WAS SLEEPING';
+        const timeText = `@ ${timeStr} ${dateStr}`;
+        const mainText = 'START WORKING NOW!!!';
+
+        // 绘制文字（带描边效果）
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+
+        // 先绘制半透明背景框
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        const textWidth = Math.max(canvas.width * 0.6, 300);
+        const textHeight = 140;
+        ctx.fillRect(centerX - textWidth / 2, centerY - textHeight / 2, textWidth, textHeight);
+
+        // 设置文字样式
+        ctx.strokeStyle = 'rgba(255, 255, 255, 1)';
+        ctx.lineWidth = Math.max(2, canvas.width / 200);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        // 主文字
+        ctx.font = `bold ${fontSize1}px Arial`;
+        ctx.fillStyle = 'rgba(255, 0, 0, 1)';
+        ctx.strokeText(mainText, centerX, centerY - 50);
+        ctx.fillText(mainText, centerX, centerY - 50);
+
+        // 时间文字
+        ctx.font = `bold ${fontSize2}px Arial`;
+        ctx.fillStyle = 'rgba(255, 255, 0, 1)';
+        ctx.strokeText(timeText, centerX, centerY);
+        ctx.fillText(timeText, centerX, centerY);
+
+        // 中文文字
+        ctx.font = `bold ${fontSize3}px Arial`;
+        ctx.fillStyle = 'rgba(255, 0, 0, 1)';
+        ctx.strokeText(chineseText, centerX, centerY + 50);
+        ctx.fillText(chineseText, centerX, centerY + 50);
+
+        // 将canvas转换为图片URL（不下载，只用于显示）
+        const imageUrl = canvas.toDataURL('image/png');
+
+        // 创建照片弹窗
+        const photoDiv = document.createElement('div');
+        photoDiv.className = 'shame-photo';
+
+        // 随机位置
+        const randomX = Math.random() * (window.innerWidth - 300);
+        const randomY = Math.random() * (window.innerHeight - 400);
+        const randomRotate = (Math.random() * 20 - 10); // -10到10度
+
+        photoDiv.style.left = randomX + 'px';
+        photoDiv.style.top = randomY + 'px';
+        photoDiv.style.transform = `rotate(${randomRotate}deg)`;
+
+        // 创建关闭按钮
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'shame-photo-close';
+        closeBtn.innerHTML = '×';
+        closeBtn.onclick = () => {
+            photoDiv.remove();
+            shamePhotoCount--;
+        };
+
+        // 创建图片元素
+        const img = document.createElement('img');
+        img.src = imageUrl;
+        img.alt = 'Shame Photo';
+
+        // 组装元素
+        photoDiv.appendChild(closeBtn);
+        photoDiv.appendChild(img);
+        document.body.appendChild(photoDiv);
+
+        shamePhotoCount++;
+
+        // 显示提示
+        setCameraStatus("📸 Shame photo captured!", true);
+        setTimeout(() => {
+            if (isCameraOn) {
+                setCameraStatus("Eyes closed", true);
+            }
+        }, 2000);
+
+    } catch (error) {
+        console.error('Error taking shame photo:', error);
+    }
 }
 
 function createMiniWarning() {
@@ -522,6 +847,12 @@ async function sendMessage() {
 
         const lastAI = messagesContainer.querySelector(".ai-msg:last-child");
         if (lastAI && lastAI.innerText === "🤖 AI is thinking...") lastAI.remove();
+
+        // Crazy模式：始终回复固定消息
+        if (isCrazyMode) {
+            addMessage("I don't know, you need click 'Sent' to acquire answers", "ai-msg");
+            return;
+        }
 
         if (data.status === "ok") {
             // Good question → show AI answer
@@ -588,4 +919,315 @@ window.addEventListener('beforeunload', () => {
     if (totalWorkSeconds > 0) {
         saveTodayWorkTime();
     }
+});
+
+// --- Crazy模式功能 ---
+function startCrazyMode() {
+    isCrazyMode = true;
+    document.body.classList.add("crazy-mode");
+    crazyBtn.classList.add("active");
+    crazyEscCount = 0;
+
+    // 保存Send按钮原始位置
+    const rect = sendBtn.getBoundingClientRect();
+    sendBtnOriginalPosition = { x: rect.left, y: rect.top };
+    sendBtn.style.position = "relative";
+    sendBtn.style.transition = "transform 0.3s ease";
+    sendBtn.style.zIndex = "1000"; // 确保按钮始终在最上层，不会被遮挡
+
+    // 1. 鼠标视觉抖动效果（浏览器安全限制无法真正移动鼠标）- 增强版
+    let cursorOffset = 0;
+    let lastMouseX = 0;
+    let lastMouseY = 0;
+
+    // 监听鼠标移动，添加随机偏移（进一步减少抖动）
+    const mouseMoveHandler = (e) => {
+        if (!isCrazyMode) return;
+
+        // 进一步减少抖动幅度，从8px减少到3px
+        const randomOffsetX = (Math.random() - 0.5) * 3;
+        const randomOffsetY = (Math.random() - 0.5) * 3;
+
+        // 让页面元素看起来在非常轻微的抖动（模拟鼠标不听指挥）
+        document.body.style.transform = `translate(${randomOffsetX * 0.2}px, ${randomOffsetY * 0.2}px)`;
+
+        lastMouseX = e.clientX;
+        lastMouseY = e.clientY;
+    };
+
+    document.addEventListener("mousemove", mouseMoveHandler);
+
+    // 光标抖动动画（增强抖动）
+    crazyMouseInterval = setInterval(() => {
+        if (!isCrazyMode) return;
+
+        cursorOffset = (cursorOffset + 12) % 360; // 增加旋转速度
+        const offsetX = Math.sin(cursorOffset * Math.PI / 180) * 12; // 增加抖动幅度
+        const offsetY = Math.cos(cursorOffset * Math.PI / 180) * 12; // 增加抖动幅度
+
+        // 增加随机抖动
+        const randomX = (Math.random() - 0.5) * 8; // 增加随机抖动
+        const randomY = (Math.random() - 0.5) * 8; // 增加随机抖动
+
+        document.body.style.cursor = `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28"><circle cx="14" cy="14" r="12" fill="red" opacity="0.9"/><circle cx="14" cy="14" r="6" fill="white"/></svg>') ${14 + offsetX + randomX} ${14 + offsetY + randomY}, auto`;
+    }, 40); // 降低更新间隔，让抖动更频繁
+
+    // 保存mouseMoveHandler以便清理
+    window._crazyMouseMoveHandler = mouseMoveHandler;
+
+    // 1.5. 让鼠标更难控制：让按钮在鼠标靠近时轻微移动
+    const addButtonInterference = () => {
+        if (!isCrazyMode) return;
+
+        const allButtons = document.querySelectorAll('button:not(#crazy-btn)');
+        allButtons.forEach(btn => {
+            const mouseEnterHandler = (e) => {
+                if (!isCrazyMode) return;
+                // 随机移动按钮位置（5-10px）
+                const offsetX = (Math.random() - 0.5) * 20;
+                const offsetY = (Math.random() - 0.5) * 20;
+                btn.style.transition = 'transform 0.2s ease';
+                btn.style.transform = `translate(${offsetX}px, ${offsetY}px)`;
+            };
+
+            const mouseLeaveHandler = () => {
+                if (!isCrazyMode) return;
+                setTimeout(() => {
+                    btn.style.transform = '';
+                }, 200);
+            };
+
+            btn.addEventListener('mouseenter', mouseEnterHandler);
+            btn.addEventListener('mouseleave', mouseLeaveHandler);
+        });
+    };
+
+    // 延迟启用按钮干扰，避免影响crazy按钮本身
+    setTimeout(() => {
+        if (isCrazyMode) {
+            addButtonInterference();
+        }
+    }, 500);
+
+    // 定期更新按钮干扰
+    const buttonInterferenceInterval = setInterval(() => {
+        if (isCrazyMode) {
+            addButtonInterference();
+        } else {
+            clearInterval(buttonInterferenceInterval);
+        }
+    }, 3000);
+
+    window._buttonInterferenceInterval = buttonInterferenceInterval;
+
+    // 2. 输入文字消失效果
+    let lastInputLength = 0;
+    const inputHandler = () => {
+        if (!isCrazyMode) {
+            userInput.removeEventListener("input", inputHandler);
+            return;
+        }
+
+        const currentLength = userInput.value.length;
+        if (currentLength > lastInputLength) {
+            // 用户正在输入，延迟后删除最后一个字符
+            setTimeout(() => {
+                if (isCrazyMode && userInput.value.length > 0) {
+                    userInput.value = userInput.value.slice(0, -1);
+                }
+            }, 300);
+        }
+        lastInputLength = userInput.value.length;
+    };
+    userInput.addEventListener("input", inputHandler);
+
+    // 3. 咀嚼声音效果
+    playNomNomSound();
+
+    // 4. Send按钮逃走功能
+    sendBtn.addEventListener("mousemove", onSendBtnMouseMove);
+    sendBtn.addEventListener("mouseenter", onSendBtnMouseEnter);
+}
+
+function stopCrazyMode() {
+    isCrazyMode = false;
+    document.body.classList.remove("crazy-mode");
+    crazyBtn.classList.remove("active");
+
+    // 停止鼠标移动
+    if (crazyMouseInterval) {
+        clearInterval(crazyMouseInterval);
+        crazyMouseInterval = null;
+    }
+
+    // 停止按钮干扰
+    if (window._buttonInterferenceInterval) {
+        clearInterval(window._buttonInterferenceInterval);
+        window._buttonInterferenceInterval = null;
+    }
+
+    // 移除鼠标移动监听
+    if (window._crazyMouseMoveHandler) {
+        document.removeEventListener("mousemove", window._crazyMouseMoveHandler);
+        window._crazyMouseMoveHandler = null;
+    }
+
+    // 恢复页面transform
+    document.body.style.transform = "";
+
+    // 恢复所有按钮的transform
+    const allButtons = document.querySelectorAll('button');
+    allButtons.forEach(btn => {
+        if (btn.style.transform) {
+            btn.style.transform = '';
+        }
+    });
+
+    // 恢复Send按钮位置
+    if (sendBtnOriginalPosition) {
+        sendBtn.style.position = "";
+        sendBtn.style.left = "";
+        sendBtn.style.top = "";
+        sendBtn.style.transform = "";
+        sendBtn.style.transition = "";
+    }
+
+    // 移除Send按钮事件监听
+    sendBtn.removeEventListener("mousemove", onSendBtnMouseMove);
+    sendBtn.removeEventListener("mouseenter", onSendBtnMouseEnter);
+
+    // 恢复光标
+    document.body.style.cursor = "";
+
+    // 停止声音
+    if (nomNomAudio) {
+        nomNomAudio.pause();
+        nomNomAudio = null;
+    }
+}
+
+function onSendBtnMouseMove(e) {
+    if (!isCrazyMode) return;
+
+    const btnRect = sendBtn.getBoundingClientRect();
+    const btnCenterX = btnRect.left + btnRect.width / 2;
+    const btnCenterY = btnRect.top + btnRect.height / 2;
+
+    const mouseX = e.clientX;
+    const mouseY = e.clientY;
+
+    const distance = Math.sqrt(
+        Math.pow(mouseX - btnCenterX, 2) + Math.pow(mouseY - btnCenterY, 2)
+    );
+
+    // 如果鼠标靠近按钮（距离小于80px），让按钮逃走
+    if (distance < 80) {
+        // 获取整个chatbox (#app) 的边界
+        const appRect = appContainer.getBoundingClientRect();
+
+        // 获取input-container的边界（按钮的原始容器）
+        const inputContainer = document.getElementById("input-container");
+        const containerRect = inputContainer.getBoundingClientRect();
+
+        // 获取按钮的原始位置（相对于input-container）
+        const btnOriginalLeft = btnRect.left - containerRect.left;
+        const btnOriginalTop = btnRect.top - containerRect.top;
+
+        // 限制移动范围：不超过input-container的边界，但可以在整个chatbox内移动
+        // 计算相对于input-container的最大移动距离
+        const maxMoveX = containerRect.width - btnRect.width - btnOriginalLeft;
+        const minMoveX = -btnOriginalTop;
+
+        // 但也要考虑整个chatbox的边界
+        const appMaxX = appRect.width - btnRect.width - (btnRect.left - appRect.left);
+        const appMinX = -(btnRect.left - appRect.left);
+        const appMaxY = appRect.height - btnRect.height - (btnRect.top - appRect.top);
+        const appMinY = -(btnRect.top - appRect.top);
+
+        // 取两者的交集，确保按钮不会超出chatbox，也不会离input-container太远
+        const finalMaxX = Math.min(maxMoveX, appMaxX);
+        const finalMinX = Math.max(minMoveX, appMinX);
+        const finalMaxY = Math.min(containerRect.height - btnRect.height - btnOriginalTop, appMaxY);
+        const finalMinY = Math.max(-btnOriginalTop, appMinY);
+
+        // 限制移动距离不要太大（最多150px），确保按钮始终可见
+        const maxMoveDistance = 150;
+        const escapeX = Math.max(finalMinX, Math.min(finalMaxX, (Math.random() - 0.5) * maxMoveDistance * 2));
+        const escapeY = Math.max(finalMinY, Math.min(finalMaxY, (Math.random() - 0.5) * maxMoveDistance * 2));
+
+        sendBtn.style.transform = `translate(${escapeX}px, ${escapeY}px)`;
+    }
+}
+
+function onSendBtnMouseEnter(e) {
+    if (!isCrazyMode) return;
+    onSendBtnMouseMove(e);
+}
+
+function playNomNomSound() {
+    if (!isCrazyMode) return;
+
+    if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    }
+
+    // 创建咀嚼声音效果（Nom Nom Nom）
+    const playNom = () => {
+        if (!isCrazyMode) return;
+
+        const osc = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+
+        osc.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+
+        // 创建"Nom"的声音（低频到高频的快速变化）
+        osc.frequency.setValueAtTime(120, audioContext.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(250, audioContext.currentTime + 0.08);
+        osc.frequency.exponentialRampToValueAtTime(120, audioContext.currentTime + 0.16);
+
+        gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.16);
+
+        osc.type = 'sawtooth';
+        osc.start(audioContext.currentTime);
+        osc.stop(audioContext.currentTime + 0.16);
+    };
+
+    // 播放三次"Nom"
+    playNom();
+    setTimeout(() => { if (isCrazyMode) playNom(); }, 200);
+    setTimeout(() => { if (isCrazyMode) playNom(); }, 400);
+
+    // 每2.5秒重复一次
+    if (isCrazyMode) {
+        setTimeout(playNomNomSound, 2500);
+    }
+}
+
+// ESC键退出Crazy模式（需要按5次）
+document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && isCrazyMode) {
+        e.preventDefault();
+        crazyEscCount++;
+
+        if (crazyEscCount >= 5) {
+            stopCrazyMode();
+            crazyEscCount = 0;
+            alert("Crazy mode disabled!");
+        }
+    } else if (e.key !== "Escape") {
+        // 如果按了其他键，重置ESC计数
+        crazyEscCount = 0;
+    }
+});
+
+// Crazy按钮点击事件（只能进入，不能退出）
+crazyBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isCrazyMode) {
+        startCrazyMode();
+    }
+    // 进入crazy模式后，点击👹不再有效（只能通过ESC退出）
 });
