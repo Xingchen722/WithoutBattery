@@ -594,24 +594,37 @@ body.crazy-mode #app {
 body.crazy-mode .chat-header {
   background: rgba(26, 13, 38, 0.95) !important;
   border-bottom: 1px solid rgba(138, 43, 226, 0.3) !important;
+  color: #4c1d95 !important; /* 深紫色文字 */
+}
+
+body.crazy-mode .chat-header h1 {
+  color: #9333ea !important; /* 中等深度紫色，不要太深 */
+}
+
+body.crazy-mode #messages {
+  color: #4c1d95 !important; /* 深紫色文字 */
 }
 
 body.crazy-mode .user-msg {
   background: rgba(138, 43, 226, 0.3) !important;
   border: 1px solid rgba(138, 43, 226, 0.5) !important;
-  color: #e0b0ff !important;
+  color: #4c1d95 !important; /* 深紫色文字 */
 }
 
 body.crazy-mode .ai-msg {
   background: rgba(75, 0, 130, 0.2) !important;
   border: 1px solid rgba(138, 43, 226, 0.4) !important;
-  color: #d4a5ff !important;
+  color: #5b21b6 !important; /* 深紫色文字 */
 }
 
 body.crazy-mode #user-input {
   background: rgba(26, 13, 38, 0.8) !important;
   border-color: rgba(138, 43, 226, 0.5) !important;
-  color: #e0b0ff !important;
+  color: #a855f7 !important; /* 中等深度紫色，不要太深 */
+}
+
+body.crazy-mode #user-input::placeholder {
+  color: #9333ea !important; /* placeholder颜色 */
 }
 
 body.crazy-mode #user-input:focus {
