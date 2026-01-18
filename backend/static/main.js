@@ -55,7 +55,7 @@ const CITIES = [
     "🇪🇸 Barcelona", "🇮🇹 Milan", "🇺🇸 Los Angeles", "🇺🇸 Chicago", "🇨🇦 Vancouver",
     "🇦🇺 Melbourne", "🇯🇵 Osaka", "🇨🇳 Shanghai", "🇨🇳 Hong Kong", "🇸🇬 Singapore"
 ];
-const BALLOON_IMAGE_PATH = 'balloon.png'; // 热气球图片路径
+const BALLOON_IMAGE_PATH = '/static/balloon.png'; // 热气球图片路径
 
 // --- 核心计时循环 (每秒执行) ---
 setInterval(() => {
