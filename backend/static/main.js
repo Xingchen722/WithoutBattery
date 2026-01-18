@@ -680,8 +680,8 @@ function onFaceResults(results) {
     const ear = (leftEAR + rightEAR) / 2;
 
     // 检查是否在冷却期内（嘴巴张开取消警告后的冷却期）
-    const now = Date.now();
-    const inCooldown = now < mouthOpenCooldownUntil;
+    // const now = Date.now();
+    // const inCooldown = now < mouthOpenCooldownUntil;
 
     // 眼睛检测（冷却期内不触发新的惩罚）
     if (ear < EAR_THRESHOLD) {
