@@ -687,7 +687,7 @@ function onFaceResults(results) {
     if (ear < EAR_THRESHOLD) {
         eyeClosedFrames += 1;
         setCameraStatus("Eyes closed", true);
-        if (eyeClosedFrames >= EYE_CLOSED_FRAMES && !inCooldown) {
+        if (eyeClosedFrames >= EYE_CLOSED_FRAMES) {
             triggerPunishment("eyes");
             // 触发羞耻快照（只在第一次触发时拍照，且摄像头已开启）
             if (!hasTakenShamePhoto && isCameraOn && cameraFeed && cameraFeed.readyState === 4) {
